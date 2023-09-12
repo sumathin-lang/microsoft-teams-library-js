@@ -701,14 +701,15 @@ export namespace app {
     uninitializeCommunication();
   }
 
-  // TeamsHost will call into App, App will call this fn
-  export function fakeMessageFromParent(evt: DOMMessageEvent): void {
+  // TeamsHost will call this fn
+  export const fakeMessageFromParent = (evt: DOMMessageEvent): void => {
     processMessage(evt);
-  }
+  };
 
-  export function setSendFakeMessageToParent(fn: any): void {
+  export const setSendFakeMessageToParent = (fn: any): void => {
+    _uninitialize();
     setOnMessageReceivedOfParent(fn);
-  }
+  };
 
   /**
    * Retrieves the current context the frame is running in.
