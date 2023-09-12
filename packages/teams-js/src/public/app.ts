@@ -5,14 +5,17 @@
 import {
   Communication,
   initializeCommunication,
+  processMessage,
   sendAndHandleStatusAndReason,
   sendAndUnwrap,
   sendMessageToParent,
+  setOnMessageReceivedOfParent,
   uninitializeCommunication,
 } from '../internal/communication';
 import { defaultSDKVersionForCompatCheck } from '../internal/constants';
 import { GlobalVars } from '../internal/globalVars';
 import * as Handlers from '../internal/handlers'; // Conflict with some names
+import { DOMMessageEvent } from '../internal/interfaces';
 import { ensureInitializeCalled, ensureInitialized, processAdditionalValidOrigins } from '../internal/internalAPIs';
 import { getLogger } from '../internal/telemetry';
 import { compareSDKVersions, inServerSideRenderingEnvironment, runWithTimeout } from '../internal/utils';
@@ -585,7 +588,7 @@ export namespace app {
         GlobalVars.initializeCalled = true;
 
         Handlers.initializeHandlers();
-        GlobalVars.initializePromise = initializeCommunication(validMessageOrigins).then(
+        GlobalVars.initializePromise = initializeCommunication().then(
           ({ context, clientType, runtimeConfig, clientSupportedSDKVersion = defaultSDKVersionForCompatCheck }) => {
             GlobalVars.frameContext = context;
             GlobalVars.hostClientType = clientType;
@@ -696,6 +699,15 @@ export namespace app {
     GlobalVars.isFramelessWindow = false;
 
     uninitializeCommunication();
+  }
+
+  // TeamsHost will call into App, App will call this fn
+  export function fakeMessageFromParent(evt: DOMMessageEvent): void {
+    processMessage(evt);
+  }
+
+  export function setSendFakeMessageToParent(fn: any): void {
+    setOnMessageReceivedOfParent(fn);
   }
 
   /**

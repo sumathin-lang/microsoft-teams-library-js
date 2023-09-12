@@ -9,7 +9,6 @@ import { GlobalVars } from './globalVars';
 import { callHandler } from './handlers';
 import { DOMMessageEvent, ExtendedWindow, MessageRequest, MessageResponse } from './interfaces';
 import { getLogger } from './telemetry';
-import { ssrSafeWindow, validateOrigin } from './utils';
 
 const communicationLogger = getLogger('communication');
 
@@ -57,34 +56,34 @@ interface InitializeResponse {
  * @internal
  * Limited to Microsoft-internal use
  */
-export function initializeCommunication(validMessageOrigins: string[] | undefined): Promise<InitializeResponse> {
+export function initializeCommunication(): Promise<InitializeResponse> {
   // Listen for messages post to our window
   CommunicationPrivate.messageListener = (evt: DOMMessageEvent): void => processMessage(evt);
 
   // If we are in an iframe, our parent window is the one hosting us (i.e., window.parent); otherwise,
   // it's the window that opened us (i.e., window.opener)
-  Communication.currentWindow = Communication.currentWindow || ssrSafeWindow();
-  Communication.parentWindow =
-    Communication.currentWindow.parent !== Communication.currentWindow.self
-      ? Communication.currentWindow.parent
-      : Communication.currentWindow.opener;
+  // Communication.currentWindow = Communication.currentWindow || ssrSafeWindow();
+  // Communication.parentWindow =
+  //   Communication.currentWindow.parent !== Communication.currentWindow.self
+  //     ? Communication.currentWindow.parent
+  //     : Communication.currentWindow.opener;
 
-  // Listen to messages from the parent or child frame.
-  // Frameless windows will only receive this event from child frames and if validMessageOrigins is passed.
-  if (Communication.parentWindow || validMessageOrigins) {
-    Communication.currentWindow.addEventListener('message', CommunicationPrivate.messageListener, false);
-  }
+  // // Listen to messages from the parent or child frame.
+  // // Frameless windows will only receive this event from child frames and if validMessageOrigins is passed.
+  // if (Communication.parentWindow || validMessageOrigins) {
+  //   Communication.currentWindow.addEventListener('message', CommunicationPrivate.messageListener, false);
+  // }
 
-  if (!Communication.parentWindow) {
-    const extendedWindow = Communication.currentWindow as unknown as ExtendedWindow;
-    if (extendedWindow.nativeInterface) {
-      GlobalVars.isFramelessWindow = true;
-      extendedWindow.onNativeMessage = handleParentMessage;
-    } else {
-      // at this point we weren't able to find a parent to talk to, no way initialization will succeed
-      return Promise.reject(new Error('Initialization Failed. No Parent window found.'));
-    }
-  }
+  // if (!Communication.parentWindow) {
+  //   const extendedWindow = Communication.currentWindow as unknown as ExtendedWindow;
+  //   if (extendedWindow.nativeInterface) {
+  //     GlobalVars.isFramelessWindow = true;
+  //     extendedWindow.onNativeMessage = handleParentMessage;
+  //   } else {
+  //     // at this point we weren't able to find a parent to talk to, no way initialization will succeed
+  //     return Promise.reject(new Error('Initialization Failed. No Parent window found.'));
+  //   }
+  // }
 
   try {
     // Send the initialized message to any origin, because at this point we most likely don't know the origin
@@ -229,7 +228,7 @@ export function sendMessageToParent(actionName: string, argsOrCallback?: any[] |
 }
 
 const sendMessageToParentHelperLogger = communicationLogger.extend('sendMessageToParentHelper');
-
+let onMessageReceivedOfParent = null;
 /**
  * @internal
  * Limited to Microsoft-internal use
@@ -243,6 +242,11 @@ function sendMessageToParentHelper(actionName: string, args: any[]): MessageRequ
   /* eslint-disable-next-line strict-null-checks/all */ /* Fix tracked by 5730662 */
   logger('Message %i information: %o', request.id, { actionName, args });
 
+  if (onMessageReceivedOfParent) {
+    console.log('SSSS request is ', request);
+    onMessageReceivedOfParent({ data: request });
+    return request;
+  }
   if (GlobalVars.isFramelessWindow) {
     if (Communication.currentWindow && Communication.currentWindow.nativeInterface) {
       /* eslint-disable-next-line strict-null-checks/all */ /* Fix tracked by 5730662 */
@@ -267,13 +271,17 @@ function sendMessageToParentHelper(actionName: string, args: any[]): MessageRequ
   return request;
 }
 
+export function setOnMessageReceivedOfParent(fn: () => void): void {
+  onMessageReceivedOfParent = fn;
+}
+
 const processMessageLogger = communicationLogger.extend('processMessage');
 
 /**
  * @internal
  * Limited to Microsoft-internal use
  */
-function processMessage(evt: DOMMessageEvent): void {
+export function processMessage(evt: DOMMessageEvent): void {
   // Process only if we received a valid message
   if (!evt || !evt.data || typeof evt.data !== 'object') {
     processMessageLogger('Unrecognized message format received by app, message being ignored. Message: %o', evt);
@@ -283,27 +291,28 @@ function processMessage(evt: DOMMessageEvent): void {
   // Process only if the message is coming from a different window and a valid origin
   // valid origins are either a pre-known origin or one specified by the app developer
   // in their call to app.initialize
-  const messageSource = evt.source || (evt.originalEvent && evt.originalEvent.source);
-  const messageOrigin = evt.origin || (evt.originalEvent && evt.originalEvent.origin);
-  if (!shouldProcessMessage(messageSource, messageOrigin)) {
-    processMessageLogger(
-      'Message being ignored by app because it is either coming from the current window or a different window with an invalid origin',
-    );
-    return;
-  }
+  // const messageSource = evt.source || (evt.originalEvent && evt.originalEvent.source);
+  // const messageOrigin = evt.origin || (evt.originalEvent && evt.originalEvent.origin);
+  // if (!shouldProcessMessage(messageSource, messageOrigin)) {
+  //   processMessageLogger(
+  //     'Message being ignored by app because it is either coming from the current window or a different window with an invalid origin',
+  //   );
+  //   return;
+  // }
 
-  // Update our parent and child relationships based on this message
-  updateRelationships(messageSource, messageOrigin);
+  // // Update our parent and child relationships based on this message
+  // updateRelationships(messageSource, messageOrigin);
 
-  // Handle the message
-  if (messageSource === Communication.parentWindow) {
-    handleParentMessage(evt);
-  } else if (messageSource === Communication.childWindow) {
-    handleChildMessage(evt);
-  }
+  // // Handle the message
+  // if (messageSource === Communication.parentWindow) {
+  console.log('SSSS processMessage', evt);
+  handleParentMessage(evt);
+  // } else if (messageSource === Communication.childWindow) {
+  //   handleChildMessage(evt);
+  // }
 }
 
-const shouldProcessMessageLogger = communicationLogger.extend('shouldProcessMessage');
+// const shouldProcessMessageLogger = communicationLogger.extend('shouldProcessMessage');
 
 /**
  * @hidden
@@ -312,65 +321,65 @@ const shouldProcessMessageLogger = communicationLogger.extend('shouldProcessMess
  * @internal
  * Limited to Microsoft-internal use
  */
-function shouldProcessMessage(messageSource: Window, messageOrigin: string): boolean {
-  // Process if message source is a different window and if origin is either in
-  // Teams' pre-known whitelist or supplied as valid origin by user during initialization
-  if (Communication.currentWindow && messageSource === Communication.currentWindow) {
-    shouldProcessMessageLogger('Should not process message because it is coming from the current window');
-    return false;
-  } else if (
-    Communication.currentWindow &&
-    Communication.currentWindow.location &&
-    messageOrigin &&
-    messageOrigin === Communication.currentWindow.location.origin
-  ) {
-    return true;
-  } else {
-    const isOriginValid = validateOrigin(new URL(messageOrigin));
-    if (!isOriginValid) {
-      shouldProcessMessageLogger('Message has an invalid origin of %s', messageOrigin);
-    }
-    return isOriginValid;
-  }
-}
+// function shouldProcessMessage(messageSource: Window, messageOrigin: string): boolean {
+//   // Process if message source is a different window and if origin is either in
+//   // Teams' pre-known whitelist or supplied as valid origin by user during initialization
+//   if (Communication.currentWindow && messageSource === Communication.currentWindow) {
+//     shouldProcessMessageLogger('Should not process message because it is coming from the current window');
+//     return false;
+//   } else if (
+//     Communication.currentWindow &&
+//     Communication.currentWindow.location &&
+//     messageOrigin &&
+//     messageOrigin === Communication.currentWindow.location.origin
+//   ) {
+//     return true;
+//   } else {
+//     const isOriginValid = validateOrigin(new URL(messageOrigin));
+//     if (!isOriginValid) {
+//       shouldProcessMessageLogger('Message has an invalid origin of %s', messageOrigin);
+//     }
+//     return isOriginValid;
+//   }
+// }
 
 /**
  * @internal
  * Limited to Microsoft-internal use
  */
-function updateRelationships(messageSource: Window, messageOrigin: string): void {
-  // Determine whether the source of the message is our parent or child and update our
-  // window and origin pointer accordingly
-  // For frameless windows (i.e mobile), there is no parent frame, so the message must be from the child.
-  if (
-    !GlobalVars.isFramelessWindow &&
-    (!Communication.parentWindow || Communication.parentWindow.closed || messageSource === Communication.parentWindow)
-  ) {
-    Communication.parentWindow = messageSource;
-    Communication.parentOrigin = messageOrigin;
-  } else if (
-    !Communication.childWindow ||
-    Communication.childWindow.closed ||
-    messageSource === Communication.childWindow
-  ) {
-    Communication.childWindow = messageSource;
-    Communication.childOrigin = messageOrigin;
-  }
+// function updateRelationships(messageSource: Window, messageOrigin: string): void {
+//   // Determine whether the source of the message is our parent or child and update our
+//   // window and origin pointer accordingly
+//   // For frameless windows (i.e mobile), there is no parent frame, so the message must be from the child.
+//   if (
+//     !GlobalVars.isFramelessWindow &&
+//     (!Communication.parentWindow || Communication.parentWindow.closed || messageSource === Communication.parentWindow)
+//   ) {
+//     Communication.parentWindow = messageSource;
+//     Communication.parentOrigin = messageOrigin;
+//   } else if (
+//     !Communication.childWindow ||
+//     Communication.childWindow.closed ||
+//     messageSource === Communication.childWindow
+//   ) {
+//     Communication.childWindow = messageSource;
+//     Communication.childOrigin = messageOrigin;
+//   }
 
-  // Clean up pointers to closed parent and child windows
-  if (Communication.parentWindow && Communication.parentWindow.closed) {
-    Communication.parentWindow = null;
-    Communication.parentOrigin = null;
-  }
-  if (Communication.childWindow && Communication.childWindow.closed) {
-    Communication.childWindow = null;
-    Communication.childOrigin = null;
-  }
+//   // Clean up pointers to closed parent and child windows
+//   if (Communication.parentWindow && Communication.parentWindow.closed) {
+//     Communication.parentWindow = null;
+//     Communication.parentOrigin = null;
+//   }
+//   if (Communication.childWindow && Communication.childWindow.closed) {
+//     Communication.childWindow = null;
+//     Communication.childOrigin = null;
+//   }
 
-  // If we have any messages in our queue, send them now
-  flushMessageQueue(Communication.parentWindow);
-  flushMessageQueue(Communication.childWindow);
-}
+//   // If we have any messages in our queue, send them now
+//   flushMessageQueue(Communication.parentWindow);
+//   flushMessageQueue(Communication.childWindow);
+// }
 
 const handleParentMessageLogger = communicationLogger.extend('handleParentMessage');
 
@@ -426,26 +435,26 @@ function isPartialResponse(evt: DOMMessageEvent): boolean {
  * @internal
  * Limited to Microsoft-internal use
  */
-function handleChildMessage(evt: DOMMessageEvent): void {
-  if ('id' in evt.data && 'func' in evt.data) {
-    // Try to delegate the request to the proper handler, if defined
-    const message = evt.data as MessageRequest;
-    const [called, result] = callHandler(message.func, message.args);
-    if (called && typeof result !== 'undefined') {
-      /* eslint-disable-next-line strict-null-checks/all */ /* Fix tracked by 5730662 */
-      sendMessageResponseToChild(message.id, Array.isArray(result) ? result : [result]);
-    } else {
-      // No handler, proxy to parent
-      sendMessageToParent(message.func, message.args, (...args: any[]): void => {
-        if (Communication.childWindow) {
-          const isPartialResponse = args.pop();
-          /* eslint-disable-next-line strict-null-checks/all */ /* Fix tracked by 5730662 */
-          sendMessageResponseToChild(message.id, args, isPartialResponse);
-        }
-      });
-    }
-  }
-}
+// function handleChildMessage(evt: DOMMessageEvent): void {
+//   if ('id' in evt.data && 'func' in evt.data) {
+//     // Try to delegate the request to the proper handler, if defined
+//     const message = evt.data as MessageRequest;
+//     const [called, result] = callHandler(message.func, message.args);
+//     if (called && typeof result !== 'undefined') {
+//       /* eslint-disable-next-line strict-null-checks/all */ /* Fix tracked by 5730662 */
+//       sendMessageResponseToChild(message.id, Array.isArray(result) ? result : [result]);
+//     } else {
+//       // No handler, proxy to parent
+//       sendMessageToParent(message.func, message.args, (...args: any[]): void => {
+//         if (Communication.childWindow) {
+//           const isPartialResponse = args.pop();
+//           /* eslint-disable-next-line strict-null-checks/all */ /* Fix tracked by 5730662 */
+//           sendMessageResponseToChild(message.id, args, isPartialResponse);
+//         }
+//       });
+//     }
+//   }
+// }
 
 /**
  * @internal
@@ -471,22 +480,22 @@ function getTargetOrigin(targetWindow: Window): string {
     : null;
 }
 
-const flushMessageQueueLogger = communicationLogger.extend('flushMessageQueue');
+// const flushMessageQueueLogger = communicationLogger.extend('flushMessageQueue');
 /**
  * @internal
  * Limited to Microsoft-internal use
  */
-function flushMessageQueue(targetWindow: Window | any): void {
-  const targetOrigin = getTargetOrigin(targetWindow);
-  const targetMessageQueue = getTargetMessageQueue(targetWindow);
-  const target = targetWindow == Communication.parentWindow ? 'parent' : 'child';
-  while (targetWindow && targetOrigin && targetMessageQueue.length > 0) {
-    const request = targetMessageQueue.shift();
-    /* eslint-disable-next-line strict-null-checks/all */ /* Fix tracked by 5730662 */
-    flushMessageQueueLogger('Flushing message %i from ' + target + ' message queue via postMessage.', request.id);
-    targetWindow.postMessage(request, targetOrigin);
-  }
-}
+// function flushMessageQueue(targetWindow: Window | any): void {
+//   const targetOrigin = getTargetOrigin(targetWindow);
+//   const targetMessageQueue = getTargetMessageQueue(targetWindow);
+//   const target = targetWindow == Communication.parentWindow ? 'parent' : 'child';
+//   while (targetWindow && targetOrigin && targetMessageQueue.length > 0) {
+//     const request = targetMessageQueue.shift();
+//     /* eslint-disable-next-line strict-null-checks/all */ /* Fix tracked by 5730662 */
+//     flushMessageQueueLogger('Flushing message %i from ' + target + ' message queue via postMessage.', request.id);
+//     targetWindow.postMessage(request, targetOrigin);
+//   }
+// }
 
 /**
  * @internal
@@ -508,15 +517,15 @@ export function waitForMessageQueue(targetWindow: Window, callback: () => void):
  * @internal
  * Limited to Microsoft-internal use
  */
-function sendMessageResponseToChild(id: number, args?: any[], isPartialResponse?: boolean): void {
-  const targetWindow = Communication.childWindow;
-  /* eslint-disable-next-line strict-null-checks/all */ /* Fix tracked by 5730662 */
-  const response = createMessageResponse(id, args, isPartialResponse);
-  const targetOrigin = getTargetOrigin(targetWindow);
-  if (targetWindow && targetOrigin) {
-    targetWindow.postMessage(response, targetOrigin);
-  }
-}
+// function sendMessageResponseToChild(id: number, args?: any[], isPartialResponse?: boolean): void {
+//   const targetWindow = Communication.childWindow;
+//   /* eslint-disable-next-line strict-null-checks/all */ /* Fix tracked by 5730662 */
+//   const response = createMessageResponse(id, args, isPartialResponse);
+//   const targetOrigin = getTargetOrigin(targetWindow);
+//   if (targetWindow && targetOrigin) {
+//     targetWindow.postMessage(response, targetOrigin);
+//   }
+// }
 
 /**
  * @hidden
@@ -558,13 +567,13 @@ function createMessageRequest(func: string, args: any[]): MessageRequest {
  * @internal
  * Limited to Microsoft-internal use
  */
-function createMessageResponse(id: number, args: any[], isPartialResponse: boolean): MessageResponse {
-  return {
-    id: id,
-    args: args || [],
-    isPartialResponse,
-  };
-}
+// function createMessageResponse(id: number, args: any[], isPartialResponse: boolean): MessageResponse {
+//   return {
+//     id: id,
+//     args: args || [],
+//     isPartialResponse,
+//   };
+// }
 
 /**
  * @hidden
