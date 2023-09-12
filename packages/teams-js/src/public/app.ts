@@ -701,11 +701,6 @@ export namespace app {
     uninitializeCommunication();
   }
 
-  // TeamsHost will call this fn
-  export const fakeMessageFromParent = (evt: DOMMessageEvent): void => {
-    processMessage(evt);
-  };
-
   export const setSendFakeMessageToParent = (fn: any): void => {
     _uninitialize();
     setOnMessageReceivedOfParent(fn);

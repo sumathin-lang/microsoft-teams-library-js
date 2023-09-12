@@ -128,7 +128,7 @@ export function uninitializeCommunication(): void {
  * Limited to Microsoft-internal use
  */
 export function sendAndUnwrap<T>(actionName: string, ...args: any[]): Promise<T> {
-  return sendMessageToParentAsync(actionName, args).then(([result]: [T]) => result);
+  return sendMessageToParentAsync(actionName, args).then((result: any) => result.data);
 }
 
 export function sendAndHandleStatusAndReason(actionName: string, ...args: any[]): Promise<void> {
@@ -177,9 +177,20 @@ export function sendAndHandleSdkError<T>(actionName: string, ...args: any[]): Pr
  */
 export function sendMessageToParentAsync<T>(actionName: string, args: any[] = undefined): Promise<T> {
   return new Promise((resolve) => {
-    const request = sendMessageToParentHelper(actionName, args);
-    /* eslint-disable-next-line strict-null-checks/all */ /* Fix tracked by 5730662 */
-    resolve(waitForResponse<T>(request.id));
+    if (onMessageReceivedOfParent) {
+      const request = createMessageRequest(actionName, args);
+      console.log('SSSS resolving promise', request);
+      resolve(
+        onMessageReceivedOfParent({ data: request }).then((resolvedData) => {
+          console.log('SSSS resolved with data', resolvedData);
+          return resolvedData;
+        }),
+      );
+    } else {
+      const request = sendMessageToParentHelper(actionName, args);
+      /* eslint-disable-next-line strict-null-checks/all */ /* Fix tracked by 5730662 */
+      resolve(waitForResponse<T>(request.id));
+    }
   });
 }
 
