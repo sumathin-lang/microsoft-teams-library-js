@@ -5,7 +5,6 @@
 import {
   Communication,
   initializeCommunication,
-  processMessage,
   sendAndHandleStatusAndReason,
   sendAndUnwrap,
   sendMessageToParent,
@@ -15,7 +14,6 @@ import {
 import { defaultSDKVersionForCompatCheck } from '../internal/constants';
 import { GlobalVars } from '../internal/globalVars';
 import * as Handlers from '../internal/handlers'; // Conflict with some names
-import { DOMMessageEvent } from '../internal/interfaces';
 import { ensureInitializeCalled, ensureInitialized, processAdditionalValidOrigins } from '../internal/internalAPIs';
 import { getLogger } from '../internal/telemetry';
 import { compareSDKVersions, inServerSideRenderingEnvironment, runWithTimeout } from '../internal/utils';
